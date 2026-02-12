@@ -37,7 +37,7 @@ abstract class BaseP2pService : Service() {
         registerReceiver(p2pReceiver, intentFilter, getReceiverFlags())
         p2pReceiverRegistered = true
 
-        p2pManager = getSystemService(WifiP2pManager::class.java)
+        p2pManager = getSystemService(WifiP2pManager::class.java)!!
         p2pChannel = p2pManager.initialize(this, mainLooper, null)
     }
 

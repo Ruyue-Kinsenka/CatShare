@@ -481,7 +481,7 @@ class P2pReceiverService : BaseP2pService() {
                     }
 
                     if (textContent != null) {
-                        val cm = getSystemService(ClipboardManager::class.java)
+                        val cm = getSystemService(ClipboardManager::class.java)!!
                         cm.setPrimaryClip(ClipData.newPlainText("Shared Text", textContent))
 
                         showTextCopiedToast()

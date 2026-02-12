@@ -184,7 +184,7 @@ class GattServerService : Service() {
         }
 
         try {
-            btManager = getSystemService(BluetoothManager::class.java)
+            btManager = getSystemService(BluetoothManager::class.java)!!
             val btAdapter = btManager.adapter
             if (btAdapter == null || !btAdapter.isEnabled) {
                 throw IllegalStateException("Bluetooth not enabled")

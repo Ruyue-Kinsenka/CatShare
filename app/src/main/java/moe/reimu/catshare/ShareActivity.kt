@@ -71,7 +71,7 @@ class ShareActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        bluetoothManager = getSystemService(BluetoothManager::class.java)
+        bluetoothManager = getSystemService(BluetoothManager::class.java)!!
         val adapter = bluetoothManager.adapter
         if (adapter == null || !adapter.isEnabled) {
             NotificationUtils.showBluetoothToast(this)
@@ -79,7 +79,7 @@ class ShareActivity : ComponentActivity() {
             return
         }
 
-        val wifiManager = getSystemService(WifiManager::class.java)
+        val wifiManager = getSystemService(WifiManager::class.java)!!
         if (!wifiManager.isWifiEnabled) {
             NotificationUtils.showWifiToast(this)
             finish()
@@ -229,7 +229,7 @@ fun deviceScanner(): List<DiscoveredDevice> {
     var discoveredDevices by remember { mutableStateOf(emptyList<DiscoveredDevice>()) }
 
     LifecycleResumeEffect(context) {
-        val manager = context.getSystemService(BluetoothManager::class.java)
+        val manager = context.getSystemService(BluetoothManager::class.java)!!
         val adapter = manager.adapter
         val devicesLock = Object()
 
