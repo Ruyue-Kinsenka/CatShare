@@ -27,6 +27,11 @@ import android.os.IBinder
 import android.os.ParcelUuid
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import moe.reimu.catshare.AppSettings
@@ -37,9 +42,9 @@ import moe.reimu.catshare.models.DeviceInfo
 import moe.reimu.catshare.models.P2pInfo
 import moe.reimu.catshare.utils.BleUtils
 import moe.reimu.catshare.utils.JsonWithUnknownKeys
+import moe.reimu.catshare.utils.SystemMacAddressProvider
 import moe.reimu.catshare.utils.NotificationUtils
 import moe.reimu.catshare.utils.ServiceState
-import moe.reimu.catshare.utils.ShizukuUtils
 import moe.reimu.catshare.utils.TAG
 import moe.reimu.catshare.utils.checkBluetoothPermissions
 import moe.reimu.catshare.utils.registerInternalBroadcastReceiver
@@ -49,6 +54,7 @@ import kotlin.math.max
 import kotlin.math.min
 
 class GattServerService : Service() {
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private lateinit var btManager: BluetoothManager
     private var btAdvertiser: BluetoothLeAdvertiser? = null
 
@@ -213,9 +219,10 @@ class GattServerService : Service() {
             return
         }
 
-        ShizukuUtils.getMacAddress(this, "p2p0") {
-            if (it != null) {
-                updateMacAddress(it)
+        serviceScope.launch {
+            val mac = SystemMacAddressProvider.getMacAddress(this@GattServerService, "p2p0")
+            if (mac != null) {
+                updateMacAddress(mac)
             }
         }
 
@@ -333,6 +340,7 @@ class GattServerService : Service() {
     @SuppressLint("MissingPermission")
     override fun onDestroy() {
         super.onDestroy()
+        serviceScope.cancel()
         if (internalReceiverRegistered) {
             unregisterReceiver(internalReceiver)
         }

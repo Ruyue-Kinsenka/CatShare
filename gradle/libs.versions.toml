@@ -9,7 +9,6 @@ ktor = "3.0.3"
 appcompat = "1.7.1"
 material = "1.12.0"
 activity = "1.10.1"
-shizuku = "13.1.5"
 jetbrainsKotlinJvm = "2.2.0"
 
 [libraries]
@@ -35,8 +34,6 @@ androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version
 material = { group = "com.google.android.material", name = "material", version.ref = "material" }
 androidx-activity = { group = "androidx.activity", name = "activity", version.ref = "activity" }
 
-shizuku-api = { module = "dev.rikka.shizuku:api", version.ref = "shizuku" }
-shizuku-provider = { module = "dev.rikka.shizuku:provider", version.ref = "shizuku" }
 androidx-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
 androidx-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
 
@@ -48,4 +45,3 @@ kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", versi
 kotlin-parcelize = { id = "org.jetbrains.kotlin.plugin.parcelize", version.ref = "kotlin" }
 jetbrains-kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "jetbrainsKotlinJvm" }
 android-library = { id = "com.android.library", version.ref = "agp" }
-

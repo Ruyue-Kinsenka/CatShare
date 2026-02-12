@@ -9,7 +9,6 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -55,9 +54,7 @@ import moe.reimu.catshare.services.GattServerService
 import moe.reimu.catshare.ui.DefaultCard
 import moe.reimu.catshare.ui.theme.CatShareTheme
 import moe.reimu.catshare.utils.ServiceState
-import moe.reimu.catshare.utils.TAG
 import moe.reimu.catshare.utils.registerInternalBroadcastReceiver
-import rikka.shizuku.Shizuku
 import java.util.ArrayList
 
 class MainActivity : ComponentActivity() {
@@ -161,44 +158,6 @@ fun MainActivityContent() {
         }
     }
 
-    val localMacAddressGranted = remember {
-        context.checkSelfPermission("android.permission.LOCAL_MAC_ADDRESS") == PackageManager.PERMISSION_GRANTED
-    }
-
-    var shizukuGranted by remember {
-        mutableStateOf(false)
-    }
-
-    var shizukuAvailable by remember {
-        mutableStateOf(false)
-    }
-
-    DisposableEffect(Unit) {
-        val permissionListener = Shizuku.OnRequestPermissionResultListener { _, grantResult ->
-            Log.d(TAG, "Shizuku grant result: $grantResult")
-            shizukuGranted = grantResult == PackageManager.PERMISSION_GRANTED
-        }
-
-        val binderRecvListener = Shizuku.OnBinderReceivedListener {
-            shizukuAvailable = true
-            shizukuGranted = Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
-        }
-
-        val binderDeadReceiver = Shizuku.OnBinderDeadListener {
-            shizukuAvailable = false
-        }
-
-        Shizuku.addRequestPermissionResultListener(permissionListener)
-        Shizuku.addBinderReceivedListenerSticky(binderRecvListener)
-        Shizuku.addBinderDeadListener(binderDeadReceiver)
-
-        onDispose {
-            Shizuku.removeRequestPermissionResultListener(permissionListener)
-            Shizuku.removeBinderReceivedListener(binderRecvListener)
-            Shizuku.removeBinderDeadListener(binderDeadReceiver)
-        }
-    }
-
     val pickFilesLauncher = rememberLauncherForActivityResult(ChooseFilesContract()) { pickedUris ->
         if (pickedUris.isNotEmpty()) {
             val intent = Intent(context, ShareActivity::class.java)
@@ -274,51 +233,6 @@ fun MainActivityContent() {
                 }
             }
 
-            if (!localMacAddressGranted) {
-                item {
-                    DefaultCard(onClick = {
-                        if (!shizukuGranted) {
-                            try {
-                                Shizuku.requestPermission(0)
-                            } catch (e: Throwable) {
-                                e.printStackTrace()
-                            }
-                        }
-                    }) {
-                        Row(
-                            modifier = Modifier.padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            MyIcon(
-                                if (shizukuAvailable && shizukuGranted) {
-                                    ImageVector.vectorResource(R.drawable.ic_done)
-                                } else {
-                                    ImageVector.vectorResource(R.drawable.ic_close)
-                                }
-                            )
-                            Column {
-                                Text(
-                                    text = stringResource(
-                                        if (shizukuAvailable) {
-                                            if (shizukuGranted) {
-                                                R.string.shizuku_available
-                                            } else {
-                                                R.string.shizuku_not_granted
-                                            }
-                                        } else {
-                                            R.string.shizuku_unavailable
-                                        }
-                                    ),
-                                    style = MaterialTheme.typography.titleMedium,
-                                )
-                                Text(
-                                    text = stringResource(R.string.shizuku_desc),
-                                )
-                            }
-                        }
-                    }
-                }
-            }
         }
     }
 }

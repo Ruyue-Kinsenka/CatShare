@@ -63,7 +63,7 @@ import moe.reimu.catshare.utils.BleUtils
 import moe.reimu.catshare.utils.DeviceUtils
 import moe.reimu.catshare.utils.JsonWithUnknownKeys
 import moe.reimu.catshare.utils.NotificationUtils
-import moe.reimu.catshare.utils.ShizukuUtils
+import moe.reimu.catshare.utils.SystemMacAddressProvider
 import moe.reimu.catshare.utils.TAG
 import moe.reimu.catshare.utils.awaitWithTimeout
 import moe.reimu.catshare.utils.createGroupSuspend
@@ -391,7 +391,9 @@ class P2pSenderService : BaseP2pService() {
                     R.string.error_p2p_failed
                 )
 
-                val p2pMac = ShizukuUtils.getMacAddress(this@P2pSenderService, "p2p0") ?: "02:00:00:00:00:00"
+                val p2pMac =
+                    SystemMacAddressProvider.getMacAddress(this@P2pSenderService, "p2p0")
+                        ?: "02:00:00:00:00:00"
                 Log.d(TAG, "Advertised local MAC address: $p2pMac")
 
                 withTimeoutReason(

@@ -113,9 +113,6 @@ dependencies {
     implementation(libs.material)
     implementation(libs.androidx.activity)
 
-    implementation(libs.shizuku.api)
-    implementation(libs.shizuku.provider)
-
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
 }

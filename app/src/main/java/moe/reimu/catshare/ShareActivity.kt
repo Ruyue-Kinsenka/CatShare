@@ -60,7 +60,6 @@ import moe.reimu.catshare.ui.theme.CatShareTheme
 import moe.reimu.catshare.utils.BleUtils
 import moe.reimu.catshare.utils.DeviceUtils
 import moe.reimu.catshare.utils.NotificationUtils
-import moe.reimu.catshare.utils.ShizukuUtils
 import moe.reimu.catshare.utils.TAG
 import java.nio.ByteBuffer
 import kotlin.random.Random
@@ -117,8 +116,6 @@ class ShareActivity : ComponentActivity() {
         }
 
         Log.i(TAG, "Shared ${fileInfos.size} files")
-
-        ShizukuUtils.bindService()
 
         enableEdgeToEdge()
         setContent {
