@@ -71,7 +71,7 @@
             android:name=".ShareActivity"
             android:exported="true"
             android:label="@string/send"
-            android:theme="@style/Theme.CatShare">
+            android:theme="@style/Theme.ShareOverlay">
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />

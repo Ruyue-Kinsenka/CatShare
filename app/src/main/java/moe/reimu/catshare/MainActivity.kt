@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -167,23 +168,40 @@ fun MainActivityContent() {
     }
 
     Scaffold(topBar = {
-        TopAppBar(title = { Text(text = stringResource(R.string.app_name)) }, actions = {
-            IconButton(onClick = {
-                context.startActivity(Intent(context, SettingsActivity::class.java))
-            }) {
-                Icon(
-                    imageVector = Icons.Filled.Settings,
-                    contentDescription = stringResource(R.string.title_activity_settings)
+        TopAppBar(
+            title = {
+                Text(
+                    text = stringResource(R.string.app_name),
+                    style = MaterialTheme.typography.headlineSmall
                 )
-            }
-        })
+            },
+            actions = {
+                IconButton(onClick = {
+                    context.startActivity(Intent(context, SettingsActivity::class.java))
+                }) {
+                    Icon(
+                        imageVector = Icons.Filled.Settings,
+                        contentDescription = stringResource(R.string.title_activity_settings)
+                    )
+                }
+            })
     }) { innerPadding ->
         LazyColumn(
             modifier = Modifier.padding(innerPadding),
             state = listState,
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            contentPadding = PaddingValues(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
         ) {
+            item {
+                Text(
+                    text = stringResource(R.string.send_desc),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp, vertical = 4.dp)
+                )
+            }
             item {
                 DefaultCard(onClick = {
                     pickFilesLauncher.launch()

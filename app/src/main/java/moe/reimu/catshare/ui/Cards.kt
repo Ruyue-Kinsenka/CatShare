@@ -7,6 +7,10 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.shape.RoundedCornerShape
+
+private val CardShape = RoundedCornerShape(24.dp)
 
 @Composable
 fun DefaultCard(
@@ -14,8 +18,12 @@ fun DefaultCard(
 ) {
     Card(
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-        ), modifier = modifier.fillMaxWidth(), content = content
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+        ),
+        shape = CardShape,
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        modifier = modifier.fillMaxWidth(),
+        content = content
     )
 }
 
@@ -25,7 +33,11 @@ fun DefaultCard(
 ) {
     Card(
         onClick = onClick, colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-        ), modifier = modifier.fillMaxWidth(), content = content
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+        ),
+        shape = CardShape,
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        modifier = modifier.fillMaxWidth(),
+        content = content
     )
 }

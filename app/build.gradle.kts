@@ -59,8 +59,6 @@ android {
             signingConfig = signingConfigs.findByName("release")
         }
         debug {
-            applicationIdSuffix = ".debug"
-            resValue("string", "app_name", "CatShare (Debug)")
         }
     }
     compileOptions {

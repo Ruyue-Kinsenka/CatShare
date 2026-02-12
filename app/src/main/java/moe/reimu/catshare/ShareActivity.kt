@@ -7,14 +7,11 @@ import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.content.ServiceConnection
 import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.Bundle
-import android.os.IBinder
 import android.os.ParcelUuid
 import android.provider.MediaStore
 import android.util.Log
@@ -22,10 +19,16 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -33,12 +36,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -46,11 +49,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.lifecycle.compose.LifecycleResumeEffect
-import androidx.lifecycle.compose.LifecycleStartEffect
+import androidx.core.view.WindowCompat
 import moe.reimu.catshare.models.DiscoveredDevice
 import moe.reimu.catshare.models.FileInfo
 import moe.reimu.catshare.models.TaskInfo
@@ -63,6 +68,7 @@ import moe.reimu.catshare.utils.NotificationUtils
 import moe.reimu.catshare.utils.TAG
 import java.nio.ByteBuffer
 import kotlin.random.Random
+import androidx.compose.foundation.shape.RoundedCornerShape
 
 class ShareActivity : ComponentActivity() {
     private lateinit var bluetoothManager: BluetoothManager
@@ -116,11 +122,15 @@ class ShareActivity : ComponentActivity() {
         }
 
         Log.i(TAG, "Shared ${fileInfos.size} files")
+        setFinishOnTouchOutside(true)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
 
         enableEdgeToEdge()
         setContent {
             CatShareTheme {
-                ShareActivityContent(fileInfos)
+                ShareActivityContent(fileInfos) {
+                    finish()
+                }
             }
         }
     }
@@ -153,9 +163,8 @@ class ShareActivity : ComponentActivity() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ShareActivityContent(files: List<FileInfo>) {
+fun ShareActivityContent(files: List<FileInfo>, onDismiss: () -> Unit) {
     val context = LocalContext.current
     val discoveredDevices = deviceScanner()
 
@@ -163,53 +172,109 @@ fun ShareActivityContent(files: List<FileInfo>) {
     val iconMod = Modifier
         .size(48.dp)
         .padding(end = 16.dp)
+    val consumeClicks = remember { MutableInteractionSource() }
+    val sheetShape: Shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
 
-    Scaffold(
-        topBar = {
-            TopAppBar(title = { Text(text = stringResource(R.string.choose_recipient)) })
-        }
-    ) { innerPadding ->
-        LazyColumn(
-            modifier = Modifier.padding(innerPadding),
-            state = listState,
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            contentPadding = PaddingValues(horizontal = 16.dp),
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
+            ) { onDismiss() },
+        contentAlignment = Alignment.BottomCenter
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.62f)
+                .clickable(
+                    interactionSource = consumeClicks,
+                    indication = null
+                ) {}
+                .navigationBarsPadding(),
+            shape = sheetShape,
+            tonalElevation = 8.dp,
+            shadowElevation = 12.dp,
+            color = MaterialTheme.colorScheme.surface
         ) {
-            if (discoveredDevices.isEmpty()) {
-                item {
-                    Text(stringResource(R.string.scanning_desc))
+            Column(modifier = Modifier.fillMaxSize()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 10.dp, bottom = 2.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Surface(
+                        modifier = Modifier
+                            .size(width = 36.dp, height = 4.dp),
+                        shape = RoundedCornerShape(100),
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                        content = {}
+                    )
                 }
-            } else {
-                items(discoveredDevices, key = { it.id }) {
-                    DefaultCard(onClick = {
-                        val task = TaskInfo(
-                            id = Random.nextInt(),
-                            device = it,
-                            files = files
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 20.dp, end = 8.dp, top = 4.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = stringResource(R.string.choose_recipient),
+                        style = MaterialTheme.typography.titleLarge,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = onDismiss) {
+                        Icon(
+                            imageVector = Icons.Filled.Close,
+                            contentDescription = stringResource(android.R.string.cancel)
                         )
-                        P2pSenderService.startTaskChecked(context, task)
-                    }) {
-                        Row(
-                            modifier = Modifier.padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.AccountCircle,
-                                contentDescription = null,
-                                modifier = iconMod
+                    }
+                }
+
+                LazyColumn(
+                    state = listState,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                ) {
+                    if (discoveredDevices.isEmpty()) {
+                        item {
+                            Text(
+                                stringResource(R.string.scanning_desc),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(8.dp)
                             )
-                            Column {
-                                Text(
-                                    text = if (BuildConfig.DEBUG) {
-                                        "${it.name} (${it.id}, ${it.device.address})"
-                                    } else {
-                                        it.name
-                                    },
-                                    style = MaterialTheme.typography.titleMedium,
+                        }
+                    } else {
+                        items(discoveredDevices, key = { it.id }) {
+                            DefaultCard(onClick = {
+                                val task = TaskInfo(
+                                    id = Random.nextInt(),
+                                    device = it,
+                                    files = files
                                 )
-                                Text(
-                                    text = it.brand ?: stringResource(R.string.unknown)
-                                )
+                                P2pSenderService.startTaskChecked(context, task)
+                                onDismiss()
+                            }) {
+                                Row(
+                                    modifier = Modifier.padding(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.AccountCircle,
+                                        contentDescription = null,
+                                        modifier = iconMod
+                                    )
+                                    Column {
+                                        Text(
+                                            text = it.name,
+                                            style = MaterialTheme.typography.titleMedium,
+                                        )
+                                        Text(
+                                            text = it.brand ?: stringResource(R.string.unknown)
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
