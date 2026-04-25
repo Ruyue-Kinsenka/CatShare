@@ -51,6 +51,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
 import moe.reimu.catshare.services.GattServerService
 import moe.reimu.catshare.ui.DefaultCard
 import moe.reimu.catshare.ui.theme.CatShareTheme
@@ -64,6 +65,7 @@ class MainActivity : ComponentActivity() {
 
         checkAndRequestPermissions()
 
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         enableEdgeToEdge()
         setContent {
             CatShareTheme {
