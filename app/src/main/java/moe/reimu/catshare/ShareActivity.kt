@@ -6,8 +6,12 @@ import android.bluetooth.le.BluetoothLeScanner
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.content.res.Configuration
+import android.graphics.Color
 import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.Build
@@ -16,9 +20,19 @@ import android.os.ParcelUuid
 import android.provider.MediaStore
 import android.util.Log
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -46,12 +60,17 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
@@ -62,6 +81,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import kotlinx.coroutines.delay
 import moe.reimu.catshare.models.DiscoveredDevice
 import moe.reimu.catshare.models.FileInfo
 import moe.reimu.catshare.models.TaskInfo
@@ -71,6 +92,7 @@ import moe.reimu.catshare.utils.BleUtils
 import moe.reimu.catshare.utils.DeviceUtils
 import moe.reimu.catshare.utils.NotificationUtils
 import moe.reimu.catshare.utils.TAG
+import moe.reimu.catshare.utils.registerInternalBroadcastReceiver
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 import kotlin.random.Random
@@ -128,24 +150,39 @@ class ShareActivity : ComponentActivity() {
 
         Log.i(TAG, "Shared ${fileInfos.size} files")
         setFinishOnTouchOutside(true)
-        WindowCompat.setDecorFitsSystemWindows(window, false)
-        disableSystemBarContrast()
+        configureImmersiveSystemBars()
 
         enableEdgeToEdge()
+        configureImmersiveSystemBars()
+        @Suppress("DEPRECATION")
+        overridePendingTransition(0, 0)
         setContent {
             CatShareTheme {
                 ShareActivityContent(fileInfos) {
                     finish()
+                    @Suppress("DEPRECATION")
+                    overridePendingTransition(0, 0)
                 }
             }
         }
     }
 
     @Suppress("DEPRECATION")
-    private fun disableSystemBarContrast() {
+    private fun configureImmersiveSystemBars() {
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.statusBarColor = Color.TRANSPARENT
+        window.navigationBarColor = Color.TRANSPARENT
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             window.isStatusBarContrastEnforced = false
             window.isNavigationBarContrastEnforced = false
+        }
+
+        val isNightMode = resources.configuration.uiMode and
+            Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            isAppearanceLightStatusBars = !isNightMode
+            isAppearanceLightNavigationBars = !isNightMode
         }
     }
 
@@ -184,95 +221,175 @@ fun ShareActivityContent(files: List<FileInfo>, onDismiss: () -> Unit) {
 
     val listState = rememberLazyListState()
     val consumeClicks = remember { MutableInteractionSource() }
+    var visible by remember { mutableStateOf(false) }
+    var hasEntered by remember { mutableStateOf(false) }
+    var activeTaskId by remember { mutableStateOf<Int?>(null) }
+    var activeDeviceId by remember { mutableStateOf<String?>(null) }
+    var sendingState by remember { mutableStateOf(SendingUiState()) }
+
+    val scrimAlpha by animateFloatAsState(
+        targetValue = if (visible) 0.28f else 0f,
+        animationSpec = tween(durationMillis = 360),
+        label = "shareScrimAlpha"
+    )
+
+    fun requestDismiss() {
+        visible = false
+    }
+
+    BackHandler(onBack = ::requestDismiss)
+
+    LaunchedEffect(Unit) {
+        visible = true
+        hasEntered = true
+    }
+
+    LaunchedEffect(visible, hasEntered) {
+        if (hasEntered && !visible) {
+            delay(260)
+            onDismiss()
+        }
+    }
+
+    DisposableEffect(context, activeTaskId) {
+        val taskId = activeTaskId
+        if (taskId == null) {
+            return@DisposableEffect onDispose {}
+        }
+
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                if (intent.getIntExtra(P2pSenderService.EXTRA_TASK_ID, -1) != taskId) {
+                    return
+                }
+
+                sendingState = SendingUiState(
+                    state = intent.getStringExtra(P2pSenderService.EXTRA_SENDING_STATE)
+                        ?: P2pSenderService.SENDING_STATE_PREPARING,
+                    totalSize = intent.getLongExtra(P2pSenderService.EXTRA_TOTAL_SIZE, 0L),
+                    processedSize = intent.getLongExtra(P2pSenderService.EXTRA_PROCESSED_SIZE, 0L)
+                )
+            }
+        }
+
+        context.registerInternalBroadcastReceiver(
+            receiver,
+            IntentFilter(P2pSenderService.ACTION_SENDING_PROGRESS)
+        )
+
+        onDispose {
+            context.unregisterReceiver(receiver)
+        }
+    }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.22f))
+            .background(MaterialTheme.colorScheme.scrim.copy(alpha = scrimAlpha))
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null
-            ) { onDismiss() },
+            ) { requestDismiss() },
         contentAlignment = Alignment.BottomCenter
     ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight(0.48f)
-                .clickable(
-                    interactionSource = consumeClicks,
-                    indication = null
-                ) {}
-                .navigationBarsPadding(),
-            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-            tonalElevation = 8.dp,
-            shadowElevation = 12.dp,
-            color = MaterialTheme.colorScheme.surface
+        AnimatedVisibility(
+            visible = visible,
+            enter = slideInVertically(
+                initialOffsetY = { it },
+                animationSpec = tween(durationMillis = 520, easing = FastOutSlowInEasing)
+            ) + fadeIn(animationSpec = tween(durationMillis = 280)),
+            exit = slideOutVertically(
+                targetOffsetY = { it },
+                animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing)
+            ) + fadeOut(animationSpec = tween(durationMillis = 180))
         ) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 10.dp, bottom = 4.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Surface(
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.48f)
+                    .clickable(
+                        interactionSource = consumeClicks,
+                        indication = null
+                    ) {}
+                    .navigationBarsPadding(),
+                shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+                tonalElevation = 8.dp,
+                shadowElevation = 12.dp,
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f)
+            ) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    Box(
                         modifier = Modifier
-                            .width(36.dp)
-                            .height(4.dp),
-                        shape = RoundedCornerShape(100),
-                        color = MaterialTheme.colorScheme.outlineVariant,
-                        content = {}
-                    )
-                }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 20.dp, end = 8.dp, top = 2.dp, bottom = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = stringResource(R.string.choose_recipient),
-                            style = MaterialTheme.typography.titleLarge
-                        )
-                        Text(
-                            text = stringResource(R.string.scanning_desc),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            .fillMaxWidth()
+                            .padding(top = 10.dp, bottom = 4.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Surface(
+                            modifier = Modifier
+                                .width(36.dp)
+                                .height(4.dp),
+                            shape = RoundedCornerShape(100),
+                            color = MaterialTheme.colorScheme.outlineVariant,
+                            content = {}
                         )
                     }
-                    IconButton(onClick = onDismiss) {
-                        Icon(
-                            imageVector = Icons.Filled.Close,
-                            contentDescription = stringResource(android.R.string.cancel)
-                        )
-                    }
-                }
-
-                LazyRow(
-                    state = listState,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    contentPadding = PaddingValues(horizontal = 18.dp, vertical = 12.dp),
-                ) {
-                    if (discoveredDevices.isEmpty()) {
-                        item {
-                            ScanningRecipientCard()
-                        }
-                    } else {
-                        items(discoveredDevices, key = { it.id }) {
-                            RecipientDeviceCard(
-                                device = it,
-                                onClick = {
-                                    val task = TaskInfo(
-                                        id = Random.nextInt(),
-                                        device = it,
-                                        files = files
-                                    )
-                                    P2pSenderService.startTaskChecked(context, task)
-                                    onDismiss()
-                                }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 20.dp, end = 8.dp, top = 2.dp, bottom = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.choose_recipient),
+                                style = MaterialTheme.typography.titleLarge
                             )
+                            Text(
+                                text = stringResource(R.string.scanning_desc),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        IconButton(onClick = ::requestDismiss) {
+                            Icon(
+                                imageVector = Icons.Filled.Close,
+                                contentDescription = stringResource(android.R.string.cancel)
+                            )
+                        }
+                    }
+
+                    LazyRow(
+                        state = listState,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 12.dp),
+                    ) {
+                        if (discoveredDevices.isEmpty()) {
+                            item {
+                                ScanningRecipientCard()
+                            }
+                        } else {
+                            items(discoveredDevices, key = { it.id }) {
+                                val isActiveDevice = it.id == activeDeviceId
+                                RecipientDeviceCard(
+                                    device = it,
+                                    enabled = activeTaskId == null,
+                                    sendingState = if (isActiveDevice) sendingState else null,
+                                    onClick = {
+                                        val task = TaskInfo(
+                                            id = Random.nextInt(),
+                                            device = it,
+                                            files = files
+                                        )
+                                        if (P2pSenderService.startTaskChecked(context, task)) {
+                                            activeTaskId = task.id
+                                            activeDeviceId = it.id
+                                            sendingState = SendingUiState(
+                                                state = P2pSenderService.SENDING_STATE_PREPARING
+                                            )
+                                        }
+                                    }
+                                )
+                            }
                         }
                     }
                 }
@@ -281,10 +398,29 @@ fun ShareActivityContent(files: List<FileInfo>, onDismiss: () -> Unit) {
     }
 }
 
+private data class SendingUiState(
+    val state: String = P2pSenderService.SENDING_STATE_PREPARING,
+    val totalSize: Long = 0L,
+    val processedSize: Long = 0L
+) {
+    val progress: Float?
+        get() = when {
+            state == P2pSenderService.SENDING_STATE_COMPLETED -> 1f
+            totalSize > 0L -> (processedSize.toFloat() / totalSize.toFloat()).coerceIn(0f, 1f)
+            else -> null
+        }
+}
+
 @Composable
-private fun RecipientDeviceCard(device: DiscoveredDevice, onClick: () -> Unit) {
+private fun RecipientDeviceCard(
+    device: DiscoveredDevice,
+    enabled: Boolean,
+    sendingState: SendingUiState?,
+    onClick: () -> Unit
+) {
     Surface(
         onClick = onClick,
+        enabled = enabled,
         modifier = Modifier
             .width(148.dp)
             .height(176.dp),
@@ -299,20 +435,7 @@ private fun RecipientDeviceCard(device: DiscoveredDevice, onClick: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Surface(
-                modifier = Modifier.size(64.dp),
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.primaryContainer
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = Icons.Filled.AccountCircle,
-                        contentDescription = null,
-                        modifier = Modifier.size(32.dp),
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                }
-            }
+            RecipientAvatar(sendingState = sendingState)
             Text(
                 text = device.name,
                 style = MaterialTheme.typography.titleSmall,
@@ -332,6 +455,58 @@ private fun RecipientDeviceCard(device: DiscoveredDevice, onClick: () -> Unit) {
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.fillMaxWidth()
             )
+        }
+    }
+}
+
+@Composable
+private fun RecipientAvatar(sendingState: SendingUiState?) {
+    val ringColor = androidx.compose.ui.graphics.Color(0xFF21A366)
+
+    Box(
+        modifier = Modifier.size(72.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Surface(
+            modifier = Modifier.size(64.dp),
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.primaryContainer
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = Icons.Filled.AccountCircle,
+                    contentDescription = null,
+                    modifier = Modifier.size(32.dp),
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            }
+        }
+
+        if (sendingState != null) {
+            val progress = sendingState.progress ?: 0.16f
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val strokeWidth = 4.dp.toPx()
+                val diameter = size.minDimension - strokeWidth
+                val topLeft = (size.minDimension - diameter) / 2f
+                drawArc(
+                    color = ringColor.copy(alpha = 0.22f),
+                    startAngle = -90f,
+                    sweepAngle = 360f,
+                    useCenter = false,
+                    topLeft = androidx.compose.ui.geometry.Offset(topLeft, topLeft),
+                    size = Size(diameter, diameter),
+                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                )
+                drawArc(
+                    color = ringColor,
+                    startAngle = -90f,
+                    sweepAngle = 360f * progress,
+                    useCenter = false,
+                    topLeft = androidx.compose.ui.geometry.Offset(topLeft, topLeft),
+                    size = Size(diameter, diameter),
+                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                )
+            }
         }
     }
 }

@@ -61,6 +61,7 @@ import moe.reimu.catshare.models.TaskInfo
 import moe.reimu.catshare.models.WebSocketMessage
 import moe.reimu.catshare.utils.BleUtils
 import moe.reimu.catshare.utils.DeviceUtils
+import moe.reimu.catshare.utils.INTERNAL_BROADCAST_PERMISSION
 import moe.reimu.catshare.utils.JsonWithUnknownKeys
 import moe.reimu.catshare.utils.NotificationUtils
 import moe.reimu.catshare.utils.SystemMacAddressProvider
@@ -168,6 +169,7 @@ class P2pSenderService : BaseP2pService() {
                 mimeType = "*/*"
             }
         }
+        broadcastTaskProgress(task.id, SENDING_STATE_PREPARING, totalSize, 0L)
 
         val settings = AppSettings(this@P2pSenderService)
 
@@ -345,6 +347,12 @@ class P2pSenderService : BaseP2pService() {
                                                     totalSize,
                                                     processedSize
                                                 )
+                                            )
+                                            broadcastTaskProgress(
+                                                task.id,
+                                                SENDING_STATE_PROGRESS,
+                                                totalSize,
+                                                processedSize
                                             )
                                             lastProgressUpdate = now
                                         }
@@ -534,18 +542,21 @@ class P2pSenderService : BaseP2pService() {
                     ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
                 )
                 runTask(task)
+                broadcastTaskProgress(task.id, SENDING_STATE_COMPLETED)
                 notificationManager.notify(
                     Random.nextInt(),
                     createCompletedNotification(task.device.name)
                 )
             } catch (e: CancelledByUserException) {
                 Log.i(TAG, "Cancelled by user")
+                broadcastTaskProgress(task.id, SENDING_STATE_FAILED)
                 notificationManager.notify(
                     Random.nextInt(),
                     createFailedNotification(task.device.name, e)
                 )
             } catch (e: Throwable) {
                 Log.e(TAG, "Failed to process task", e)
+                broadcastTaskProgress(task.id, SENDING_STATE_FAILED)
                 notificationManager.notify(
                     Random.nextInt(),
                     createFailedNotification(task.device.name, e)
@@ -667,10 +678,37 @@ class P2pSenderService : BaseP2pService() {
         notificationManager.notify(NotificationUtils.SENDER_FG_ID, n)
     }
 
+    private fun broadcastTaskProgress(
+        taskId: Int,
+        state: String,
+        totalSize: Long = 0L,
+        processedSize: Long = 0L
+    ) {
+        sendBroadcast(
+            Intent(ACTION_SENDING_PROGRESS).apply {
+                setPackage(BuildConfig.APPLICATION_ID)
+                putExtra(EXTRA_TASK_ID, taskId)
+                putExtra(EXTRA_SENDING_STATE, state)
+                putExtra(EXTRA_TOTAL_SIZE, totalSize)
+                putExtra(EXTRA_PROCESSED_SIZE, processedSize)
+            },
+            INTERNAL_BROADCAST_PERMISSION
+        )
+    }
+
     companion object {
         private const val ACTION_VERSION_NEGOTIATION = "versionNegotiation"
 
         private const val ACTION_CANCEL_SENDING = "${BuildConfig.APPLICATION_ID}.CANCEL_SENDING"
+        const val ACTION_SENDING_PROGRESS = "${BuildConfig.APPLICATION_ID}.SENDING_PROGRESS"
+        const val EXTRA_TASK_ID = "taskId"
+        const val EXTRA_SENDING_STATE = "state"
+        const val EXTRA_TOTAL_SIZE = "totalSize"
+        const val EXTRA_PROCESSED_SIZE = "processedSize"
+        const val SENDING_STATE_PREPARING = "preparing"
+        const val SENDING_STATE_PROGRESS = "progress"
+        const val SENDING_STATE_COMPLETED = "completed"
+        const val SENDING_STATE_FAILED = "failed"
 
         fun getIntent(context: Context, task: TaskInfo): Intent {
             return Intent(context, P2pSenderService::class.java).apply {
