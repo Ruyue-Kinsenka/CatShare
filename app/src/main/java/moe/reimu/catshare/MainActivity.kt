@@ -17,46 +17,50 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContract
 import androidx.activity.result.launch
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import moe.reimu.catshare.services.GattServerService
-import moe.reimu.catshare.ui.DefaultCard
 import moe.reimu.catshare.ui.theme.CatShareTheme
 import moe.reimu.catshare.utils.ServiceState
 import moe.reimu.catshare.utils.registerInternalBroadcastReceiver
+import moe.reimu.catshare.utils.INTERNAL_BROADCAST_PERMISSION
 import java.util.ArrayList
 
 class MainActivity : ComponentActivity() {
@@ -91,7 +95,7 @@ class MainActivity : ComponentActivity() {
             permissionsToRequest.add(Manifest.permission.POST_NOTIFICATIONS)
         }
 
-        if (Build.VERSION.SDK_INT <= 32 && ContextCompat.checkSelfPermission(
+        if (ContextCompat.checkSelfPermission(
                 this, Manifest.permission.ACCESS_FINE_LOCATION
             ) != PackageManager.PERMISSION_GRANTED
         ) {
@@ -141,6 +145,8 @@ fun MainActivityContent() {
     val listState = rememberLazyListState()
 
     val context = LocalContext.current
+    val settings = remember(context) { AppSettings(context) }
+    var deviceNameValue by remember { mutableStateOf(settings.deviceName) }
     DisposableEffect(context) {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
@@ -154,7 +160,7 @@ fun MainActivityContent() {
             receiver,
             IntentFilter(ServiceState.ACTION_UPDATE_RECEIVER_STATE),
         )
-        context.sendBroadcast(ServiceState.getQueryIntent())
+        context.sendBroadcast(ServiceState.getQueryIntent(), INTERNAL_BROADCAST_PERMISSION)
 
         onDispose {
             context.unregisterReceiver(receiver)
@@ -169,92 +175,229 @@ fun MainActivityContent() {
         }
     }
 
-    Scaffold(topBar = {
-        TopAppBar(
-            title = {
-                Text(
-                    text = stringResource(R.string.app_name),
-                    style = MaterialTheme.typography.headlineSmall
-                )
-            },
-            actions = {
-                IconButton(onClick = {
-                    context.startActivity(Intent(context, SettingsActivity::class.java))
-                }) {
-                    Icon(
-                        imageVector = Icons.Filled.Settings,
-                        contentDescription = stringResource(R.string.title_activity_settings)
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        text = stringResource(R.string.app_name),
+                        style = MaterialTheme.typography.headlineSmall
                     )
-                }
-            })
-    }) { innerPadding ->
+                },
+                actions = {
+                    IconButton(onClick = {
+                        context.startActivity(Intent(context, SettingsActivity::class.java))
+                    }) {
+                        Icon(
+                            imageVector = Icons.Filled.Settings,
+                            contentDescription = stringResource(R.string.title_activity_settings)
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                    scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
+            )
+        }
+    ) { innerPadding ->
         LazyColumn(
-            modifier = Modifier.padding(innerPadding),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding),
             state = listState,
             verticalArrangement = Arrangement.spacedBy(12.dp),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
         ) {
             item {
-                Text(
-                    text = stringResource(R.string.send_desc),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 4.dp, vertical = 4.dp)
+                HomeHero()
+            }
+            item {
+                HomeSettingsGroup(
+                    deviceName = deviceNameValue,
+                    onDeviceNameChange = {
+                        deviceNameValue = it
+                        if (it.isNotBlank()) {
+                            settings.deviceName = it
+                        }
+                    },
+                    discoverable = checked,
+                    onDiscoverableChange = {
+                        if (it) {
+                            GattServerService.start(context)
+                        } else {
+                            GattServerService.stop(context)
+                        }
+                    },
+                    onSendClick = {
+                        pickFilesLauncher.launch()
+                    }
                 )
             }
-            item {
-                DefaultCard(onClick = {
-                    pickFilesLauncher.launch()
-                }) {
-                    Row(
-                        modifier = Modifier.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        MyIcon(Icons.Filled.Share)
-                        Column {
-                            Text(
-                                text = stringResource(R.string.send),
-                                style = MaterialTheme.typography.titleMedium,
-                            )
-                            Text(
-                                text = stringResource(R.string.send_desc),
-                            )
-                        }
-                    }
-                }
-
-            }
-            item {
-                DefaultCard {
-                    Row(
-                        modifier = Modifier.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        MyIcon(ImageVector.vectorResource(R.drawable.ic_bluetooth_searching))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = stringResource(R.string.discoverable),
-                                style = MaterialTheme.typography.titleMedium,
-                            )
-                            Text(
-                                text = stringResource(R.string.discoverable_desc),
-                            )
-                        }
-                        Switch(checked = checked, onCheckedChange = {
-                            if (it) {
-                                GattServerService.start(context)
-                            } else {
-                                GattServerService.stop(context)
-                            }
-                        }, modifier = Modifier.padding(start = 8.dp))
-                    }
-                }
-            }
-
         }
     }
+}
+
+@Composable
+private fun HomeHero() {
+    androidx.compose.foundation.Image(
+        painter = painterResource(R.drawable.ic_home_banner),
+        contentDescription = null,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(300.dp),
+        contentScale = ContentScale.Crop
+    )
+}
+
+@Composable
+private fun HomeSettingsGroup(
+    deviceName: String,
+    onDeviceNameChange: (String) -> Unit,
+    discoverable: Boolean,
+    onDiscoverableChange: (Boolean) -> Unit,
+    onSendClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        tonalElevation = 0.dp
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            DeviceNameSettingRow(
+                value = deviceName,
+                onValueChange = onDeviceNameChange
+            )
+            SettingsDivider()
+            SendSettingRow(onClick = onSendClick)
+            SettingsDivider()
+            SwitchSettingRow(
+                title = stringResource(R.string.discoverable),
+                subtitle = stringResource(R.string.discoverable_desc),
+                checked = discoverable,
+                onCheckedChange = onDiscoverableChange
+            )
+        }
+    }
+}
+
+@Composable
+private fun DeviceNameSettingRow(
+    value: String,
+    onValueChange: (String) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 18.dp, vertical = 14.dp)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.device_name),
+                style = MaterialTheme.typography.titleMedium
+            )
+            OutlinedTextField(
+                value = value,
+                onValueChange = onValueChange,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                singleLine = true
+            )
+        }
+    }
+}
+
+@Composable
+private fun SendSettingRow(onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceContainerLow
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp)
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.send),
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Text(
+                    text = stringResource(R.string.send_desc),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+            Text(
+                text = stringResource(R.string.choose_files),
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.labelLarge
+            )
+        }
+    }
+}
+
+@Composable
+private fun SwitchSettingRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 18.dp, vertical = 16.dp)
+    ) {
+        SettingText(
+            title = title,
+            subtitle = subtitle,
+            modifier = Modifier.weight(1f)
+        )
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            modifier = Modifier.padding(start = 12.dp)
+        )
+    }
+}
+
+@Composable
+private fun SettingText(
+    title: String,
+    subtitle: String,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium
+        )
+        Text(
+            text = subtitle,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyMedium
+        )
+    }
+}
+
+@Composable
+private fun SettingsDivider() {
+    HorizontalDivider(
+        modifier = Modifier.padding(start = 18.dp),
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
+    )
 }
 
 
@@ -295,15 +438,4 @@ class ChooseFilesContract : ActivityResultContract<Void?, List<Uri>>() {
 
         return ret
     }
-}
-
-@Composable
-fun MyIcon(imageVector: ImageVector) {
-    Icon(
-        imageVector = imageVector,
-        contentDescription = null,
-        modifier = Modifier
-            .size(48.dp)
-            .padding(end = 16.dp),
-    )
 }

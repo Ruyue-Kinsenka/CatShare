@@ -22,8 +22,11 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ServiceInfo
+import android.net.wifi.WifiManager
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.os.ParcelUuid
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -48,21 +51,29 @@ import moe.reimu.catshare.utils.ServiceState
 import moe.reimu.catshare.utils.TAG
 import moe.reimu.catshare.utils.checkBluetoothPermissions
 import moe.reimu.catshare.utils.registerInternalBroadcastReceiver
+import moe.reimu.catshare.utils.INTERNAL_BROADCAST_PERMISSION
 import java.util.Arrays
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.max
 import kotlin.math.min
 
 class GattServerService : Service() {
+    private val mainHandler = Handler(Looper.getMainLooper())
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private lateinit var btManager: BluetoothManager
+    private var wifiManager: WifiManager? = null
     private var btAdvertiser: BluetoothLeAdvertiser? = null
 
     private var advertisingSet: AdvertisingSet? = null
+    private var restartAdvRunnable: Runnable? = null
 
     private val localDeviceInfoLock = Object()
     private var localDeviceInfo = DeviceInfo(
-        0, BleSecurity.getEncodedPublicKey(), "02:00:00:00:00:00", BuildConfig.VERSION_CODE
+        state = 0,
+        key = BleSecurity.getEncodedPublicKey(),
+        mac = "02:00:00:00:00:00",
+        frequency = 0,
+        catShare = BuildConfig.VERSION_CODE,
     )
     private var localDeviceStatusBytes = Json.encodeToString(localDeviceInfo).toByteArray()
 
@@ -70,7 +81,7 @@ class GattServerService : Service() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
                 ServiceState.ACTION_QUERY_RECEIVER_STATE -> {
-                    context.sendBroadcast(ServiceState.getUpdateIntent(true))
+                    context.sendBroadcast(ServiceState.getUpdateIntent(true), INTERNAL_BROADCAST_PERMISSION)
                 }
 
                 ServiceState.ACTION_STOP_SERVICE -> {
@@ -88,9 +99,18 @@ class GattServerService : Service() {
         ) {
             if (status == ADVERTISE_SUCCESS) {
                 this@GattServerService.advertisingSet = advertisingSet
+                Log.i(TAG, "Advertising started, txPower=$txPower")
             } else {
                 Log.e(TAG, "Advertising failed: $status")
+                scheduleAdvRestart()
             }
+        }
+
+        override fun onAdvertisingSetStopped(advertisingSet: AdvertisingSet?) {
+            if (this@GattServerService.advertisingSet == advertisingSet) {
+                this@GattServerService.advertisingSet = null
+            }
+            Log.i(TAG, "Advertising stopped")
         }
     }
 
@@ -99,7 +119,7 @@ class GattServerService : Service() {
     @SuppressLint("MissingPermission")
     private val gattServerCallback = object : BluetoothGattServerCallback() {
         private val writeRequests =
-            ConcurrentHashMap<Pair<BluetoothDevice, Int>, Pair<ByteArray, Int>>()
+            ConcurrentHashMap<BluetoothDevice, Pair<ByteArray, Int>>()
 
         override fun onCharacteristicReadRequest(
             device: BluetoothDevice,
@@ -112,6 +132,7 @@ class GattServerService : Service() {
                 return
             }
 
+            refreshWifiFrequency()
             val data = synchronized(localDeviceInfoLock) {
                 if (offset < localDeviceStatusBytes.size) {
                     localDeviceStatusBytes.copyOfRange(offset, localDeviceStatusBytes.size)
@@ -119,6 +140,7 @@ class GattServerService : Service() {
                     null
                 }
             }
+            Log.i(TAG, "Responding device status offset=$offset data=${data?.decodeToString()}")
 
             gattServer?.sendResponse(device, requestId, 0, 0, data)
         }
@@ -139,30 +161,55 @@ class GattServerService : Service() {
                 return
             }
 
-            val key = Pair(device, requestId)
+            val key = device
 
             val writeReq = writeRequests.getOrPut(key) {
                 Pair(ByteArray(1024), 0)
             }
 
-            System.arraycopy(value, 0, writeReq.first, offset, value.size)
+            val writeBuffer = if (offset + value.size > writeReq.first.size) {
+                writeReq.first.copyOf(offset + value.size)
+            } else {
+                writeReq.first
+            }
+            System.arraycopy(value, 0, writeBuffer, offset, value.size)
             val newLength = max(writeReq.second, offset + value.size)
 
             val data = if (preparedWrite) {
-                writeRequests[key] = writeReq.copy(second = newLength)
+                writeRequests[key] = Pair(writeBuffer, newLength)
                 if (responseNeeded) {
                     gattServer?.sendResponse(device, requestId, 0, 0, null)
                 }
                 return
             } else {
                 writeRequests.remove(key)
-                writeReq.first.copyOfRange(0, newLength)
+                writeBuffer.copyOfRange(0, newLength)
             }
 
             if (responseNeeded) {
                 gattServer?.sendResponse(device, requestId, 0, 0, null)
             }
 
+            processP2pInfo(data)
+        }
+
+        override fun onExecuteWrite(
+            device: BluetoothDevice,
+            requestId: Int,
+            execute: Boolean
+        ) {
+            val writeReq = writeRequests.remove(device)
+            if (execute && writeReq != null) {
+                processP2pInfo(writeReq.first.copyOfRange(0, writeReq.second))
+            }
+            gattServer?.sendResponse(device, requestId, 0, 0, null)
+        }
+
+        private fun processP2pInfo(data: ByteArray) {
+            if (data.isEmpty()) {
+                Log.e(TAG, "Received empty P2P info")
+                return
+            }
             var p2pInfo: P2pInfo = JsonWithUnknownKeys.decodeFromString(data.decodeToString())
             val ecKey = p2pInfo.key
             if (ecKey != null) {
@@ -191,6 +238,7 @@ class GattServerService : Service() {
 
         try {
             btManager = getSystemService(BluetoothManager::class.java)!!
+            wifiManager = applicationContext.getSystemService(WifiManager::class.java)
             val btAdapter = btManager.adapter
             if (btAdapter == null || !btAdapter.isEnabled) {
                 throw IllegalStateException("Bluetooth not enabled")
@@ -226,6 +274,9 @@ class GattServerService : Service() {
             }
         }
 
+        if (!startGattServer()) {
+            return
+        }
         startAdv()
 
         registerInternalBroadcastReceiver(internalReceiver, IntentFilter().apply {
@@ -233,7 +284,7 @@ class GattServerService : Service() {
             addAction(ServiceState.ACTION_STOP_SERVICE)
         })
         internalReceiverRegistered = true
-        sendBroadcast(ServiceState.getUpdateIntent(true))
+        sendBroadcast(ServiceState.getUpdateIntent(true), INTERNAL_BROADCAST_PERMISSION)
     }
 
     private fun createNotification(): Notification {
@@ -261,25 +312,51 @@ class GattServerService : Service() {
         return START_STICKY
     }
 
+    @SuppressLint("MissingPermission")
+    private fun startGattServer(): Boolean {
+        if (gattServer != null) {
+            return true
+        }
+
+        try {
+            gattServer = btManager.openGattServer(this, gattServerCallback).apply {
+                addService(buildGattService())
+            }
+            Log.i(TAG, "GATT server started")
+            return true
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start GATT server", e)
+            stopSelf()
+            return false
+        }
+    }
+
+    @SuppressLint("MissingPermission")
     fun startAdv() {
-        val advertiser = btAdvertiser ?: return
+        if (advertisingSet != null) {
+            return
+        }
+
+        val advertiser = btAdvertiser ?: run {
+            Log.e(TAG, "Bluetooth LE advertiser is unavailable")
+            stopSelf()
+            return
+        }
 
         val advData = AdvertiseData.Builder().apply {
             addServiceUuid(ParcelUuid(BleUtils.ADV_SERVICE_UUID))
             addServiceData(
-                ParcelUuid.fromString(
-                    String.format(
-                        "000001ff-0000-1000-8000-00805f9b34fb",
-                        java.lang.Byte.valueOf(0),
-                        java.lang.Byte.valueOf(0),
-                    )
-                ), Arrays.copyOfRange(BleUtils.RANDOM_DATA, 0, 6)
+                ParcelUuid(BleUtils.miShareServiceDataUuid(
+                    BleUtils.MISHARE_MANUFACTURER_XIAOMI,
+                    BleUtils.MISHARE_FLAG_SUPPORT_5GHZ,
+                )),
+                Arrays.copyOfRange(BleUtils.RANDOM_DATA, 0, 6)
             )
         }.build()
         val scanRespData = AdvertiseData.Builder().apply {
             val data = ByteArray(27)
-            System.arraycopy(ByteArray(8), 0, data, 0, 8)
-            System.arraycopy(BleUtils.RANDOM_DATA, 0, data, 8, 2)
+            data[8] = BleUtils.RANDOM_DATA[8]
+            data[9] = BleUtils.RANDOM_DATA[9]
 
             val name = AppSettings(this@GattServerService).deviceName
             var nameBytes = name.toByteArray(Charsets.UTF_8)
@@ -299,7 +376,10 @@ class GattServerService : Service() {
 
             data[26] = 1
 
-            addServiceData(ParcelUuid.fromString("0000ffff-0000-1000-8000-00805f9b34fb"), data)
+            addServiceData(
+                ParcelUuid(BleUtils.miShareDeviceCodeUuid(BleUtils.MISHARE_GENERIC_XIAOMI_PHONE)),
+                data
+            )
         }.build()
 
         val params = AdvertisingSetParameters.Builder().apply {
@@ -307,21 +387,50 @@ class GattServerService : Service() {
             setConnectable(true)
             setScannable(true)
             setInterval(160)
-            setTxPowerLevel(1)
+            setTxPowerLevel(AdvertisingSetParameters.TX_POWER_HIGH)
         }.build()
 
         try {
             advertiser.startAdvertisingSet(
                 params, advData, scanRespData, null, null, 0, 0, advSetCallback
             )
-
-            gattServer = btManager.openGattServer(this, gattServerCallback).apply {
-                addService(buildGattService())
-            }
         } catch (e: SecurityException) {
             Log.e(TAG, "Got SecurityException when trying to advertise", e)
             stopSelf()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start advertising", e)
+            scheduleAdvRestart()
         }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun stopAdv() {
+        restartAdvRunnable?.let(mainHandler::removeCallbacks)
+        restartAdvRunnable = null
+
+        try {
+            advertisingSet?.run {
+                btAdvertiser?.stopAdvertisingSet(advSetCallback)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to stop advertising", e)
+        }
+        advertisingSet = null
+    }
+
+    private fun scheduleAdvRestart() {
+        restartAdvRunnable?.let(mainHandler::removeCallbacks)
+        val runnable = Runnable {
+            restartAdvRunnable = null
+            if (gattServer == null) {
+                if (!startGattServer()) {
+                    return@Runnable
+                }
+            }
+            startAdv()
+        }
+        restartAdvRunnable = runnable
+        mainHandler.postDelayed(runnable, ADV_RESTART_DELAY_MS)
     }
 
     private fun buildGattService(): BluetoothGattService {
@@ -344,17 +453,9 @@ class GattServerService : Service() {
         if (internalReceiverRegistered) {
             unregisterReceiver(internalReceiver)
         }
-        sendBroadcast(ServiceState.getUpdateIntent(false))
+        sendBroadcast(ServiceState.getUpdateIntent(false), INTERNAL_BROADCAST_PERMISSION)
 
-        try {
-            advertisingSet?.run {
-                btAdvertiser?.stopAdvertisingSet(advSetCallback)
-            }
-
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to stop advertising", e)
-        }
-        advertisingSet = null
+        stopAdv()
 
 
         try {
@@ -372,6 +473,32 @@ class GattServerService : Service() {
                 state = localDeviceInfo.state,
                 mac = mac,
                 key = localDeviceInfo.key,
+                reason = localDeviceInfo.reason,
+                frequency = localDeviceInfo.frequency,
+                catShare = BuildConfig.VERSION_CODE,
+            )
+            localDeviceStatusBytes = Json.encodeToString(localDeviceInfo).toByteArray()
+        }
+    }
+
+    private fun refreshWifiFrequency() {
+        val frequency = try {
+            wifiManager?.connectionInfo?.frequency ?: 0
+        } catch (e: Exception) {
+            Log.d(TAG, "Failed to read Wi-Fi frequency", e)
+            0
+        }
+
+        synchronized(localDeviceInfoLock) {
+            if (localDeviceInfo.frequency == frequency) {
+                return
+            }
+            localDeviceInfo = DeviceInfo(
+                state = localDeviceInfo.state,
+                mac = localDeviceInfo.mac,
+                key = localDeviceInfo.key,
+                reason = localDeviceInfo.reason,
+                frequency = frequency,
                 catShare = BuildConfig.VERSION_CODE,
             )
             localDeviceStatusBytes = Json.encodeToString(localDeviceInfo).toByteArray()
@@ -379,6 +506,8 @@ class GattServerService : Service() {
     }
 
     companion object {
+        private const val ADV_RESTART_DELAY_MS = 2_000L
+
         fun getIntent(context: Context): Intent {
             return Intent(context, GattServerService::class.java)
         }

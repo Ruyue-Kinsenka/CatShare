@@ -11,25 +11,29 @@ import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,6 +43,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.core.view.WindowCompat
@@ -66,10 +71,6 @@ fun SettingsActivityContent() {
     val context = LocalContext.current
     val settings = remember(activity) { AppSettings(context) }
 
-    var deviceNameValue by remember {
-        mutableStateOf(settings.deviceName)
-    }
-
     var verboseValue by remember {
         mutableStateOf(settings.verbose)
     }
@@ -83,73 +84,51 @@ fun SettingsActivityContent() {
             title = { Text(text = stringResource(R.string.title_activity_settings)) },
             actions = {
                 IconButton(onClick = {
-                    val nameValue = deviceNameValue
-                    if (nameValue.isNotBlank()) {
-                        settings.deviceName = nameValue
-                    }
                     settings.verbose = verboseValue
+                    settings.autoAccept = autoAcceptValue
 
                     activity?.finish()
                 }) {
                     Icon(
-                        imageVector = Icons.Outlined.Check, contentDescription = "Save"
+                        imageVector = Icons.Outlined.Check,
+                        contentDescription = stringResource(android.R.string.ok)
                     )
                 }
-            })
+            },
+            colors = TopAppBarDefaults.topAppBarColors(
+                containerColor = MaterialTheme.colorScheme.background,
+                scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer
+            )
+        )
     }) { innerPadding ->
         val listState = rememberLazyListState()
 
         LazyColumn(
-            modifier = Modifier.padding(innerPadding),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding),
             state = listState,
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            contentPadding = PaddingValues(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
         ) {
             item {
-                DefaultCard {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        OutlinedTextField(
-                            value = deviceNameValue,
-                            onValueChange = { deviceNameValue = it },
-                            label = { Text(stringResource(R.string.device_name)) },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                }
+                SettingsHeader()
             }
             item {
-                DefaultCard {
-                    Row(
-                        modifier = Modifier.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = stringResource(R.string.verbose_name),
-                            style = MaterialTheme.typography.titleMedium,
-                        )
-                        Spacer(modifier = Modifier.weight(1.0f))
-                        Switch(checked = verboseValue, onCheckedChange = {
-                            verboseValue = it
-                        })
-                    }
-                }
+                SettingsToggleCard(
+                    title = stringResource(R.string.verbose_name),
+                    subtitle = stringResource(R.string.verbose_desc),
+                    checked = verboseValue,
+                    onCheckedChange = { verboseValue = it }
+                )
             }
             item {
-                DefaultCard {
-                    Row(
-                        modifier = Modifier.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = stringResource(R.string.auto_accept_name),
-                            style = MaterialTheme.typography.titleMedium,
-                        )
-                        Spacer(modifier = Modifier.weight(1.0f))
-                        Switch(checked = autoAcceptValue, onCheckedChange = {
-                            autoAcceptValue = it
-                        })
-                    }
-                }
+                SettingsToggleCard(
+                    title = stringResource(R.string.auto_accept_name),
+                    subtitle = null,
+                    checked = autoAcceptValue,
+                    onCheckedChange = { autoAcceptValue = it }
+                )
             }
             item {
                 DefaultCard(onClick = {
@@ -191,21 +170,94 @@ fun SettingsActivityContent() {
                     }.start()
                 }) {
                     Row(
-                        modifier = Modifier.padding(16.dp),
+                        modifier = Modifier.padding(18.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = stringResource(R.string.capture_logs),
                                 style = MaterialTheme.typography.titleMedium,
                             )
                             Text(
                                 text = stringResource(R.string.capture_logs_desc),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodyMedium
                             )
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun SettingsHeader() {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.secondaryContainer
+    ) {
+        Row(
+            modifier = Modifier.padding(20.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Surface(
+                modifier = Modifier.size(56.dp),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(18.dp),
+                color = MaterialTheme.colorScheme.secondary
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Filled.Settings,
+                        contentDescription = null,
+                        modifier = Modifier.size(28.dp),
+                        tint = MaterialTheme.colorScheme.onSecondary
+                    )
+                }
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = stringResource(R.string.title_activity_settings),
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsToggleCard(
+    title: String,
+    subtitle: String?,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    DefaultCard {
+        Row(
+            modifier = Modifier.padding(18.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                if (subtitle != null) {
+                    Text(
+                        text = subtitle,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
+            Switch(
+                checked = checked,
+                onCheckedChange = onCheckedChange,
+                modifier = Modifier.padding(start = 12.dp)
+            )
         }
     }
 }

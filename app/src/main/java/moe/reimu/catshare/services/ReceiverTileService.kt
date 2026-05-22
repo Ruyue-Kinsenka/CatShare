@@ -15,6 +15,7 @@ import moe.reimu.catshare.StartReceiverActivity
 import moe.reimu.catshare.utils.ServiceState
 import moe.reimu.catshare.utils.TAG
 import moe.reimu.catshare.utils.registerInternalBroadcastReceiver
+import moe.reimu.catshare.utils.INTERNAL_BROADCAST_PERMISSION
 import java.lang.ref.WeakReference
 import kotlin.random.Random
 
@@ -84,7 +85,7 @@ class ReceiverTileService : TileService() {
         )
         receiver = r
 
-        sendBroadcast(ServiceState.getQueryIntent())
+        sendBroadcast(ServiceState.getQueryIntent(), INTERNAL_BROADCAST_PERMISSION)
     }
 
     override fun onStopListening() {

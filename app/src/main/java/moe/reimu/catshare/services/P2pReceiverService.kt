@@ -163,7 +163,11 @@ class P2pReceiverService : BaseP2pService() {
             return START_NOT_STICKY
         }
 
-        val info = intent.getParcelableExtra<P2pInfo>("p2p_info") ?: return START_NOT_STICKY
+        val info = intent.getParcelableExtra<P2pInfo>("p2p_info")
+        if (info == null) {
+            MyApplication.getInstance().clearBusy()
+            return START_NOT_STICKY
+        }
         val localTaskId = Random.nextInt()
         val job = CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
             try {

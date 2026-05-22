@@ -422,6 +422,13 @@ class P2pSenderService : BaseP2pService() {
                         val rdInfo: DeviceInfo =
                             JsonWithUnknownKeys.decodeFromString(deviceInfoChar.read().value.decodeToString())
                         Log.i(TAG, "Remote device: $rdInfo")
+                        if (rdInfo.state == 1) {
+                            throw ExceptionWithMessage(
+                                "Remote device is busy: $rdInfo",
+                                IllegalStateException("Remote device is busy"),
+                                R.string.error_remote_busy
+                            )
+                        }
 
                         val cipher = rdInfo.key?.let {
                             BleSecurity.deriveSessionKey(it)

@@ -12,7 +12,14 @@ import moe.reimu.catshare.BuildConfig
 val INTERNAL_BROADCAST_PERMISSION = "${BuildConfig.APPLICATION_ID}.INTERNAL_BROADCASTS"
 
 fun Context.checkBluetoothPermissions(): Boolean {
-    if (Build.VERSION.SDK_INT <= 32) {
+    if (Build.VERSION.SDK_INT >= 31 && ContextCompat.checkSelfPermission(
+            this, Manifest.permission.ACCESS_FINE_LOCATION
+        ) != PackageManager.PERMISSION_GRANTED
+    ) {
+        return false
+    }
+
+    if (Build.VERSION.SDK_INT <= 30) {
         if (ContextCompat.checkSelfPermission(
                 this, Manifest.permission.ACCESS_FINE_LOCATION
             ) != PackageManager.PERMISSION_GRANTED
@@ -41,14 +48,21 @@ fun Context.checkBluetoothPermissions(): Boolean {
 }
 
 fun Context.checkP2pPermissions(): Boolean {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && ContextCompat.checkSelfPermission(
-            this, Manifest.permission.NEARBY_WIFI_DEVICES
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        if (ContextCompat.checkSelfPermission(
+                this, Manifest.permission.NEARBY_WIFI_DEVICES
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            return false
+        }
+    } else if (ContextCompat.checkSelfPermission(
+            this, Manifest.permission.ACCESS_FINE_LOCATION
         ) != PackageManager.PERMISSION_GRANTED
     ) {
         return false
     }
 
-    if (Build.VERSION.SDK_INT <= 32) {
+    if (Build.VERSION.SDK_INT <= 30) {
         if (ContextCompat.checkSelfPermission(
                 this, Manifest.permission.ACCESS_FINE_LOCATION
             ) != PackageManager.PERMISSION_GRANTED
